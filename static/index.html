@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>BGP Hijack Detector</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{display:flex;height:100vh;font-family:monospace;
+       background:#0a0a0a;color:#d4d4d4;overflow:hidden}
+  #map{flex:1}
+
+  /* Invert Esri tiles to pure dark — English labels stay intact */
+  .leaflet-tile{
+    filter: invert(100%) hue-rotate(180deg) brightness(80%) contrast(95%) saturate(0.3);
+  }
+  .leaflet-container{background:#0a0a0a}
+
+  #sidebar{width:400px;display:flex;flex-direction:column;
+           background:#111;border-left:1px solid #1f1f1f;overflow:hidden}
+  #topbar{padding:12px 16px;border-bottom:1px solid #1f1f1f;flex-shrink:0}
+  #topbar h1{font-size:12px;letter-spacing:.15em;color:#fff;margin-bottom:8px}
+  .counters{display:flex;gap:16px;flex-wrap:wrap}
+  .counter{font-size:11px;color:#555}
+  .counter b{color:#d4d4d4}
+  #feed{flex:1;overflow-y:auto}
+  .card{padding:10px 14px;border-bottom:1px solid #1a1a1a}
+  .card:hover{background:#161616}
+  .top-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .badge{font-size:9px;font-weight:700;letter-spacing:.08em;
+         padding:2px 7px;border-radius:3px;white-space:nowrap}
+  .MOAS{background:#7f1d1d;color:#fca5a5}
+  .SUBPREFIX_HIJACK{background:#78350f;color:#fcd34d}
+  .NEW_ORIGIN{background:#1e3a5f;color:#93c5fd}
+  .score{font-size:10px;margin-left:auto;padding:2px 7px;
+         border-radius:3px;font-weight:700;white-space:nowrap}
+  .high{background:#14532d;color:#86efac}
+  .med{background:#713f12;color:#fcd34d}
+  .low{background:#1c1c1c;color:#555}
+  .prefix{font-size:13px;color:#fff;font-weight:600;
+          word-break:break-all;margin-bottom:2px}
+  .detail{font-size:11px;color:#666;line-height:1.5;word-break:break-all}
+  .meta{font-size:10px;color:#444;margin-top:4px}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;
+       background:#22c55e;margin-right:6px;
+       animation:pulse 1.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  #empty{padding:24px 16px;font-size:12px;color:#444;text-align:center}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="sidebar">
+  <div id="topbar">
+    <h1><span class="dot"></span>BGP HIJACK DETECTOR</h1>
+    <div class="counters">
+      <div class="counter">MOAS <b id="n-moas">0</b></div>
+      <div class="counter">SUBPREFIX <b id="n-sub">0</b></div>
+      <div class="counter">NEW ORIGIN <b id="n-new">0</b></div>
+      <div class="counter">TOTAL <b id="n-total">0</b></div>
+    </div>
+  </div>
+  <div id="feed">
+    <div id="empty">Waiting for alerts...</div>
+  </div>
+</div>
+
+<script>
+// ── Map setup ────────────────────────────────────────────────
+const map = L.map('map', {zoomControl: false}).setView([20, 0], 2)
+
+// Esri World Gray Canvas — English labels, no API key needed
+L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+  {
+    attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
+    maxZoom: 16
+  }
+).addTo(map)
+
+// ── State ────────────────────────────────────────────────────
+const colors  = {MOAS:'#ef4444', SUBPREFIX_HIJACK:'#f59e0b', NEW_ORIGIN:'#3b82f6'}
+const counts  = {MOAS:0, SUBPREFIX_HIJACK:0, NEW_ORIGIN:0, total:0}
+
+function scoreClass(s){ return s >= 70 ? 'high' : s >= 40 ? 'med' : 'low' }
+function scoreLabel(s){ return s >= 70 ? 'HIGH' : s >= 40 ? 'MED'  : 'LOW'  }
+
+// ── Add alert to sidebar + map ───────────────────────────────
+function addAlert(a) {
+  // Remove "waiting" placeholder
+  const empty = document.getElementById('empty')
+  if (empty) empty.remove()
+
+  // Counts
+  counts.total++
+  if (counts[a.type] !== undefined) counts[a.type]++
+  document.getElementById('n-moas').textContent  = counts.MOAS
+  document.getElementById('n-sub').textContent   = counts.SUBPREFIX_HIJACK
+  document.getElementById('n-new').textContent   = counts.NEW_ORIGIN
+  document.getElementById('n-total').textContent = counts.total
+
+  // Sidebar card
+  const feed = document.getElementById('feed')
+  const card = document.createElement('div')
+  card.className = 'card'
+  const sc = scoreClass(a.score || 0)
+  const ts = a.timestamp ? a.timestamp.replace('T', ' ') : ''
+  card.innerHTML = `
+    <div class="top-row">
+      <span class="badge ${a.type}">${a.type.replace(/_/g,' ')}</span>
+      <span class="score ${sc}">${scoreLabel(a.score||0)} ${a.score||0}</span>
+    </div>
+    <div class="prefix">${a.prefix || '?'}</div>
+    <div class="detail">${a.detail || ''}</div>
+    <div class="meta">AS${a.origin_as} &middot; ${a.org||'Unknown'} &middot; ${a.country||'?'} &middot; ${ts}</div>
+  `
+  feed.prepend(card)
+
+  // Map marker
+  const lat = parseFloat(a.lat)
+  const lon = parseFloat(a.lon)
+  if (!isNaN(lat) && !isNaN(lon) && !(lat === 0 && lon === 0)) {
+    const color = colors[a.type] || '#fff'
+    const circle = L.circleMarker([lat, lon], {
+      radius:      7,
+      color:       color,
+      fillColor:   color,
+      fillOpacity: 0.8,
+      weight:      1.5
+    }).addTo(map)
+    circle.bindPopup(
+      `<b>${a.type.replace(/_/g,' ')}</b><br>
+       <b>${a.prefix}</b><br>
+       ${a.org || ''}<br>
+       ${a.country || ''}<br>
+       Score: ${a.score}<br>
+       <small>${a.detail}</small>`
+    )
+    // Fade out after 10 minutes
+    setTimeout(() => map.removeLayer(circle), 600000)
+  }
+}
+
+// ── Load existing alerts from DB ─────────────────────────────
+fetch('/api/alerts')
+  .then(r => r.json())
+  .then(list => [...list].reverse().forEach(addAlert))
+  .catch(e => console.error('Failed to load alerts:', e))
+
+// ── Live WebSocket feed ──────────────────────────────────────
+function connectWS() {
+  const ws = new WebSocket(`ws://${location.host}/ws`)
+  ws.onmessage = e => addAlert(JSON.parse(e.data))
+  ws.onclose   = ()  => setTimeout(connectWS, 3000)  // auto-reconnect
+  ws.onerror   = ()  => ws.close()
+}
+connectWS()
+</script>
+</body>
+</html>
