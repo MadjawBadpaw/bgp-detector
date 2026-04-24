@@ -71,6 +71,8 @@ Starts the detector. Open `http://127.0.0.1:8000` in your browser.
 ### 3. Stop
 Press `Ctrl+C` in the terminal — it will shut down cleanly.
 
+#If it doesn't respond, run `stop.bat` to force kill all Python processes and free port 8000.#
+
 ---
 
 ## Quickstart (Manual / Linux / Mac)
