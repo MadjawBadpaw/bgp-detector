@@ -165,4 +165,4 @@ ipaddress
 
 ## License
 
-MIT — do whatever you want, don't blame me if your network burns down.
+MIT — do whatever you want.
