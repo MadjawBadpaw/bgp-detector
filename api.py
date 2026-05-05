@@ -4,6 +4,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from database import get_recent_alerts
+from reputation import get_asn_reputation, get_whois
 import json
 import asyncio
 
@@ -16,6 +17,15 @@ _lock = asyncio.Lock()
 @app.get("/api/alerts")
 def api_alerts():
     return JSONResponse(get_recent_alerts(200))
+
+
+@app.get("/api/asn/{asn}")
+def asn_lookup(asn: str):
+    """Manual ASN reputation + WHOIS lookup. e.g. /api/asn/3356"""
+    rep   = get_asn_reputation(asn)
+    # use a known IP from that ASN for WHOIS — fallback to ASN string
+    whois = get_whois(rep.get("asn", asn))
+    return JSONResponse({"reputation": rep, "whois": whois})
 
 
 @app.websocket("/ws")
@@ -53,12 +63,5 @@ async def push_alert(alert: dict):
                     _clients.remove(d)
 
 
+# Static files last — must be after all API routes
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
-from reputation import get_asn_reputation, get_whois
-
-@app.get("/api/asn/{asn}")
-def asn_lookup(asn: str):
-    return {
-        "reputation": get_asn_reputation(asn),
-        "whois": get_whois(asn)  # pass a known IP of that ASN if needed
-    }

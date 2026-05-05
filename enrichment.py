@@ -2,6 +2,7 @@
 
 import requests
 from functools import lru_cache
+from reputation import get_asn_reputation, get_whois
 
 
 @lru_cache(maxsize=2048)
@@ -42,27 +43,32 @@ def get_geo(prefix: str) -> dict:
 
 
 def enrich(alert: dict) -> dict:
-    geo     = get_geo(alert.get("prefix", "0.0.0.0/0"))
-    asn_inf = get_asn_info(int(alert["origin_as"])) if alert.get("origin_as") else {}
+    prefix  = alert.get("prefix", "0.0.0.0/0")
+    asn     = alert.get("origin_as")
+
+    # Existing geo + org
+    geo     = get_geo(prefix)
+    asn_inf = get_asn_info(int(asn)) if asn else {}
+
+    # Reputation (Spamhaus + BGP Ranking)
+    rep = get_asn_reputation(str(asn)) if asn else {}
+
+    # WHOIS / RDAP
+    whois = get_whois(prefix)
+
     return {
         **alert,
-        "lat":     geo["lat"],
-        "lon":     geo["lon"],
-        "country": geo["country"],
-        "org":     asn_inf.get("name", "Unknown"),
+        # geo
+        "lat":             geo["lat"],
+        "lon":             geo["lon"],
+        "country":         geo["country"],
+        # org
+        "org":             asn_inf.get("name", "Unknown"),
+        # reputation
+        "rep_score":       rep.get("rep_score", 0),
+        "rep_flags":       rep.get("flags", []),
+        "spamhaus_listed": rep.get("spamhaus_listed", False),
+        "bgpranking_score": rep.get("bgpranking_score"),
+        # whois
+        "whois":           whois if not whois.get("error") else None,
     }
-from reputation import get_asn_reputation, get_whois
-
-async def enrich_alert(alert: dict) -> dict:
-    # ... your existing enrichment ...
-    
-    # Add reputation
-    rep = get_asn_reputation(alert["hijacker_asn"])
-    alert["rep_score"] = rep["rep_score"]
-    alert["rep_flags"] = rep["flags"]
-    alert["spamhaus_listed"] = rep["spamhaus_listed"]
-    
-    # Add WHOIS
-    alert["whois"] = get_whois(alert["prefix"])
-    
-    return alert
