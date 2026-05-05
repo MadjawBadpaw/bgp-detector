@@ -314,4 +314,13 @@ def _fire(alert_type, record, known_origins, cross_region, detail):
         "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
     }
     alert_queue.append(alert)
+from reputation import get_asn_reputation
+
+def calculate_score(alert):
+    score = alert.get("base_score", 30)
     
+    rep = get_asn_reputation(alert["hijacker_asn"])
+    score += rep["rep_score"]  # +0 to +90 from reputation alone
+    
+    # ... rest of your existing scoring ...
+    return min(score, 100)

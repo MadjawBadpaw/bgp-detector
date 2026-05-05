@@ -51,3 +51,18 @@ def enrich(alert: dict) -> dict:
         "country": geo["country"],
         "org":     asn_inf.get("name", "Unknown"),
     }
+from reputation import get_asn_reputation, get_whois
+
+async def enrich_alert(alert: dict) -> dict:
+    # ... your existing enrichment ...
+    
+    # Add reputation
+    rep = get_asn_reputation(alert["hijacker_asn"])
+    alert["rep_score"] = rep["rep_score"]
+    alert["rep_flags"] = rep["flags"]
+    alert["spamhaus_listed"] = rep["spamhaus_listed"]
+    
+    # Add WHOIS
+    alert["whois"] = get_whois(alert["prefix"])
+    
+    return alert

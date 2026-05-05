@@ -5,155 +5,513 @@
 <title>BGP Hijack Detector</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{display:flex;height:100vh;font-family:monospace;
-       background:#0a0a0a;color:#d4d4d4;overflow:hidden}
-  #map{flex:1}
 
-  /* Invert Esri tiles to pure dark — English labels stay intact */
-  .leaflet-tile{
-    filter: invert(100%) hue-rotate(180deg) brightness(80%) contrast(95%) saturate(0.3);
+  :root{
+    --bg:       #080b0f;
+    --bg2:      #0d1117;
+    --bg3:      #111820;
+    --border:   #1a2332;
+    --border2:  #243040;
+    --text:     #c9d1d9;
+    --muted:    #4a5568;
+    --muted2:   #2d3748;
+    --accent:   #00d4ff;
+    --green:    #22c55e;
+    --red:      #ef4444;
+    --amber:    #f59e0b;
+    --blue:     #3b82f6;
+    --purple:   #a78bfa;
+    --mono:     'JetBrains Mono', monospace;
+    --sans:     'Space Grotesk', sans-serif;
   }
-  .leaflet-container{background:#0a0a0a}
 
-  #sidebar{width:400px;display:flex;flex-direction:column;
-           background:#111;border-left:1px solid #1f1f1f;overflow:hidden}
-  #topbar{padding:12px 16px;border-bottom:1px solid #1f1f1f;flex-shrink:0}
-  #topbar h1{font-size:12px;letter-spacing:.15em;color:#fff;margin-bottom:8px}
-  .counters{display:flex;gap:16px;flex-wrap:wrap}
-  .counter{font-size:11px;color:#555}
-  .counter b{color:#d4d4d4}
-  #feed{flex:1;overflow-y:auto}
-  .card{padding:10px 14px;border-bottom:1px solid #1a1a1a}
-  .card:hover{background:#161616}
-  .top-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
-  .badge{font-size:9px;font-weight:700;letter-spacing:.08em;
-         padding:2px 7px;border-radius:3px;white-space:nowrap}
-  .MOAS{background:#7f1d1d;color:#fca5a5}
-  .SUBPREFIX_HIJACK{background:#78350f;color:#fcd34d}
-  .NEW_ORIGIN{background:#1e3a5f;color:#93c5fd}
-  .score{font-size:10px;margin-left:auto;padding:2px 7px;
-         border-radius:3px;font-weight:700;white-space:nowrap}
-  .high{background:#14532d;color:#86efac}
-  .med{background:#713f12;color:#fcd34d}
-  .low{background:#1c1c1c;color:#555}
-  .prefix{font-size:13px;color:#fff;font-weight:600;
-          word-break:break-all;margin-bottom:2px}
-  .detail{font-size:11px;color:#666;line-height:1.5;word-break:break-all}
-  .meta{font-size:10px;color:#444;margin-top:4px}
-  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;
-       background:#22c55e;margin-right:6px;
-       animation:pulse 1.5s ease-in-out infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-  #empty{padding:24px 16px;font-size:12px;color:#444;text-align:center}
+  body{
+    display:flex;height:100vh;
+    font-family:var(--mono);
+    background:var(--bg);color:var(--text);
+    overflow:hidden;
+  }
+
+  /* ── MAP ── */
+  #map{flex:1;position:relative}
+  .leaflet-tile{
+    filter: invert(100%) hue-rotate(180deg) brightness(75%) contrast(90%) saturate(0.2);
+  }
+  .leaflet-container{background:var(--bg)}
+  .leaflet-popup-content-wrapper{
+    background:var(--bg2);border:1px solid var(--border2);
+    color:var(--text);border-radius:6px;font-family:var(--mono);font-size:11px;
+  }
+  .leaflet-popup-tip{background:var(--bg2)}
+
+  /* map overlay stats */
+  #map-stats{
+    position:absolute;top:14px;left:14px;z-index:1000;
+    display:flex;gap:8px;flex-wrap:wrap;
+  }
+  .mstat{
+    background:rgba(8,11,15,0.88);border:1px solid var(--border2);
+    padding:6px 12px;border-radius:4px;font-size:11px;font-family:var(--mono);
+    backdrop-filter:blur(6px);
+  }
+  .mstat b{color:#fff;font-weight:700}
+  .mstat.c-red  b{color:var(--red)}
+  .mstat.c-amb  b{color:var(--amber)}
+  .mstat.c-blue b{color:var(--blue)}
+  .mstat.c-acc  b{color:var(--accent)}
+
+  /* ── SIDEBAR ── */
+  #sidebar{
+    width:420px;display:flex;flex-direction:column;
+    background:var(--bg2);border-left:1px solid var(--border);
+    overflow:hidden;flex-shrink:0;
+  }
+
+  /* header */
+  #topbar{
+    padding:14px 16px 10px;border-bottom:1px solid var(--border);
+    flex-shrink:0;background:var(--bg2);
+  }
+  .brand{
+    display:flex;align-items:center;gap:10px;margin-bottom:10px;
+  }
+  .brand-title{
+    font-size:11px;letter-spacing:.2em;color:#fff;font-weight:700;
+    text-transform:uppercase;
+  }
+  .dot{
+    width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;
+    animation:pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(34,197,94,.4)}
+    50%{opacity:.6;box-shadow:0 0 0 5px rgba(34,197,94,0)}}
+
+  /* filter bar */
+  #filters{
+    display:flex;gap:6px;flex-wrap:wrap;margin-bottom:0;
+  }
+  .filter-btn{
+    font-size:9px;font-family:var(--mono);font-weight:700;letter-spacing:.1em;
+    padding:3px 9px;border-radius:3px;border:1px solid var(--border2);
+    background:transparent;color:var(--muted);cursor:pointer;
+    transition:all .15s;text-transform:uppercase;
+  }
+  .filter-btn:hover{border-color:var(--border2);color:var(--text)}
+  .filter-btn.active{border-color:var(--accent);color:var(--accent);
+    background:rgba(0,212,255,.08)}
+  .filter-btn.f-red.active{border-color:var(--red);color:var(--red);background:rgba(239,68,68,.08)}
+  .filter-btn.f-amb.active{border-color:var(--amber);color:var(--amber);background:rgba(245,158,11,.08)}
+  .filter-btn.f-blue.active{border-color:var(--blue);color:var(--blue);background:rgba(59,130,246,.08)}
+  .filter-btn.f-spam.active{border-color:var(--purple);color:var(--purple);background:rgba(167,139,250,.08)}
+  .filter-btn.f-high.active{border-color:var(--green);color:var(--green);background:rgba(34,197,94,.08)}
+
+  /* search */
+  #search-wrap{margin-top:8px}
+  #search{
+    width:100%;background:var(--bg3);border:1px solid var(--border);
+    color:var(--text);font-family:var(--mono);font-size:11px;
+    padding:6px 10px;border-radius:4px;outline:none;
+    transition:border-color .15s;
+  }
+  #search:focus{border-color:var(--border2)}
+  #search::placeholder{color:var(--muted)}
+
+  /* feed */
+  #feed{flex:1;overflow-y:auto;scroll-behavior:smooth}
+  #feed::-webkit-scrollbar{width:3px}
+  #feed::-webkit-scrollbar-track{background:transparent}
+  #feed::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+  /* card */
+  .card{
+    padding:11px 14px;border-bottom:1px solid var(--border);
+    cursor:pointer;transition:background .1s;
+    animation:slideIn .2s ease-out;
+  }
+  @keyframes slideIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .card:hover{background:var(--bg3)}
+  .card.hidden{display:none}
+
+  .top-row{display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap}
+
+  /* type badges */
+  .badge{
+    font-size:9px;font-weight:700;letter-spacing:.08em;
+    padding:2px 7px;border-radius:3px;white-space:nowrap;font-family:var(--mono);
+  }
+  .MOAS{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+  .SUBPREFIX_HIJACK{background:rgba(245,158,11,.15);color:#fcd34d;border:1px solid rgba(245,158,11,.3)}
+  .NEW_ORIGIN{background:rgba(59,130,246,.15);color:#93c5fd;border:1px solid rgba(59,130,246,.3)}
+  .badge-spam{background:rgba(167,139,250,.15);color:#c4b5fd;border:1px solid rgba(167,139,250,.3)}
+  .badge-rpki{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.2);font-size:9px}
+
+  /* score pill */
+  .score{
+    font-size:10px;margin-left:auto;padding:2px 8px;
+    border-radius:3px;font-weight:700;white-space:nowrap;font-family:var(--mono);
+  }
+  .high{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.25)}
+  .med {background:rgba(245,158,11,.15);color:#fcd34d;border:1px solid rgba(245,158,11,.25)}
+  .low {background:var(--bg3);color:var(--muted);border:1px solid var(--border)}
+
+  .prefix{
+    font-size:13px;color:#fff;font-weight:700;
+    word-break:break-all;margin-bottom:3px;font-family:var(--mono);
+    letter-spacing:.02em;
+  }
+
+  .detail{font-size:11px;color:var(--muted);line-height:1.6;word-break:break-all;margin-bottom:4px}
+
+  /* rep flags */
+  .rep-flags{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+  .rflag{
+    font-size:9px;background:rgba(239,68,68,.1);color:#fca5a5;
+    padding:2px 7px;border-radius:3px;border:1px solid rgba(239,68,68,.2);
+    font-family:var(--mono);
+  }
+
+  /* whois block */
+  .whois-block{
+    font-size:10px;color:var(--muted);line-height:1.8;
+    word-break:break-all;margin:4px 0;padding:6px 8px;
+    background:rgba(0,0,0,.2);border-radius:4px;border:1px solid var(--border);
+  }
+  .wrow{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+  .wlabel{
+    color:var(--muted2);font-size:8px;letter-spacing:.12em;
+    font-weight:700;text-transform:uppercase;min-width:36px;flex-shrink:0;
+  }
+  .wval{color:#8b949e;font-size:10px}
+  .abuse-link{color:var(--accent);font-size:10px;text-decoration:none}
+  .abuse-link:hover{text-decoration:underline}
+
+  /* bgp rank bar */
+  .rank-row{display:flex;align-items:center;gap:6px;margin:3px 0}
+  .rank-label{font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+  .rank-bar-wrap{flex:1;background:var(--bg3);border-radius:2px;height:3px;overflow:hidden}
+  .rank-bar{height:100%;border-radius:2px;transition:width .4s ease}
+  .rank-val{font-size:9px;font-weight:700;min-width:36px;text-align:right}
+
+  /* meta row */
+  .meta{
+    font-size:10px;color:var(--muted);margin-top:5px;
+    display:flex;flex-wrap:wrap;gap:4px;align-items:center;
+  }
+  .meta-sep{color:var(--border2)}
+
+  /* expandable whois toggle */
+  .expand-btn{
+    font-size:9px;color:var(--muted);background:none;border:none;
+    cursor:pointer;padding:2px 0;font-family:var(--mono);letter-spacing:.06em;
+    text-transform:uppercase;transition:color .1s;margin-top:3px;display:block;
+  }
+  .expand-btn:hover{color:var(--accent)}
+  .whois-wrap{display:none}
+  .whois-wrap.open{display:block}
+
+  /* empty state */
+  #empty{
+    padding:40px 20px;font-size:11px;color:var(--muted);
+    text-align:center;line-height:2;letter-spacing:.05em;
+  }
+
+  /* footer */
+  #footer{
+    padding:8px 14px;border-top:1px solid var(--border);flex-shrink:0;
+    display:flex;justify-content:space-between;align-items:center;
+    background:var(--bg2);
+  }
+  .footer-text{font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+  #ws-status{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
+  .ws-ok{color:var(--green)}
+  .ws-err{color:var(--red)}
 </style>
 </head>
 <body>
 
-<div id="map"></div>
+<div id="map">
+  <div id="map-stats">
+    <div class="mstat c-red">MOAS <b id="n-moas">0</b></div>
+    <div class="mstat c-amb">SUBPREFIX <b id="n-sub">0</b></div>
+    <div class="mstat c-blue">NEW ORIGIN <b id="n-new">0</b></div>
+    <div class="mstat c-acc">TOTAL <b id="n-total">0</b></div>
+  </div>
+</div>
+
 <div id="sidebar">
   <div id="topbar">
-    <h1><span class="dot"></span>BGP HIJACK DETECTOR</h1>
-    <div class="counters">
-      <div class="counter">MOAS <b id="n-moas">0</b></div>
-      <div class="counter">SUBPREFIX <b id="n-sub">0</b></div>
-      <div class="counter">NEW ORIGIN <b id="n-new">0</b></div>
-      <div class="counter">TOTAL <b id="n-total">0</b></div>
+    <div class="brand">
+      <div class="dot"></div>
+      <span class="brand-title">BGP Hijack Detector</span>
+    </div>
+    <div id="filters">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn f-red"  data-filter="MOAS">MOAS</button>
+      <button class="filter-btn f-amb"  data-filter="SUBPREFIX_HIJACK">Subprefix</button>
+      <button class="filter-btn f-blue" data-filter="NEW_ORIGIN">New Origin</button>
+      <button class="filter-btn f-high" data-filter="high">High only</button>
+      <button class="filter-btn f-spam" data-filter="spamhaus">Spamhaus</button>
+    </div>
+    <div id="search-wrap">
+      <input id="search" type="text" placeholder="filter by prefix, ASN, org, country..."/>
     </div>
   </div>
+
   <div id="feed">
-    <div id="empty">Waiting for alerts...</div>
+    <div id="empty">— WAITING FOR ALERTS —<br><span style="font-size:9px;color:#2d3748">connected to RIPE RIS Live</span></div>
+  </div>
+
+  <div id="footer">
+    <span class="footer-text">RIPE RIS Live</span>
+    <span id="ws-status" class="ws-ok">● CONNECTED</span>
   </div>
 </div>
 
 <script>
-// ── Map setup ────────────────────────────────────────────────
-const map = L.map('map', {zoomControl: false}).setView([20, 0], 2)
+// ── Map ──────────────────────────────────────────────────────
+const map = L.map('map', {zoomControl:false, attributionControl:false})
+  .setView([20, 0], 2)
 
-// Esri World Gray Canvas — English labels, no API key needed
 L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-  {
-    attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
-    maxZoom: 16
-  }
+  {maxZoom:16}
 ).addTo(map)
 
 // ── State ────────────────────────────────────────────────────
-const colors  = {MOAS:'#ef4444', SUBPREFIX_HIJACK:'#f59e0b', NEW_ORIGIN:'#3b82f6'}
+const TYPE_COLORS = {
+  MOAS:             '#ef4444',
+  SUBPREFIX_HIJACK: '#f59e0b',
+  NEW_ORIGIN:       '#3b82f6'
+}
 const counts  = {MOAS:0, SUBPREFIX_HIJACK:0, NEW_ORIGIN:0, total:0}
+let   alerts  = []   // master list
+let   activeFilter = 'all'
+let   searchQuery  = ''
 
+// ── Helpers ──────────────────────────────────────────────────
 function scoreClass(s){ return s >= 70 ? 'high' : s >= 40 ? 'med' : 'low' }
 function scoreLabel(s){ return s >= 70 ? 'HIGH' : s >= 40 ? 'MED'  : 'LOW'  }
 
-// ── Add alert to sidebar + map ───────────────────────────────
-function addAlert(a) {
-  // Remove "waiting" placeholder
+function rankColor(v){
+  if(v == null) return '#4a5568'
+  if(v > 0.02)  return '#ef4444'
+  if(v > 0.005) return '#f59e0b'
+  return '#22c55e'
+}
+function rankWidth(v){
+  if(v == null) return 0
+  return Math.min(100, v * 3000)  // 0.033+ = full bar
+}
+
+function cardMatchesFilter(a){
+  if(activeFilter === 'all')      return true
+  if(activeFilter === 'high')     return (a.score||0) >= 70
+  if(activeFilter === 'spamhaus') return !!a.spamhaus_listed
+  return a.type === activeFilter
+}
+
+function cardMatchesSearch(a, q){
+  if(!q) return true
+  q = q.toLowerCase()
+  return (
+    (a.prefix||'').toLowerCase().includes(q) ||
+    String(a.origin_as||'').includes(q) ||
+    (a.org||'').toLowerCase().includes(q) ||
+    (a.country||'').toLowerCase().includes(q) ||
+    (a.detail||'').toLowerCase().includes(q) ||
+    (a.whois?.network_name||'').toLowerCase().includes(q) ||
+    (a.whois?.rir||'').toLowerCase().includes(q)
+  )
+}
+
+function applyFilters(){
+  const q = searchQuery
+  document.querySelectorAll('.card').forEach(el => {
+    const idx = parseInt(el.dataset.idx)
+    const a   = alerts[idx]
+    const show = cardMatchesFilter(a) && cardMatchesSearch(a, q)
+    el.classList.toggle('hidden', !show)
+  })
+}
+
+// ── Build card HTML ──────────────────────────────────────────
+function buildCard(a, idx){
+  const sc  = scoreClass(a.score||0)
+  const ts  = (a.timestamp||'').replace('T',' ').slice(0,19)
+  const col = TYPE_COLORS[a.type] || '#fff'
+
+  // Rep flags
+  const flagsHtml = (a.rep_flags && a.rep_flags.length)
+    ? `<div class="rep-flags">${a.rep_flags.map(f=>`<span class="rflag">⚑ ${f}</span>`).join('')}</div>`
+    : ''
+
+  // BGP Ranking bar
+  const rankHtml = (a.bgpranking_score != null)
+    ? `<div class="rank-row">
+        <span class="rank-label">BGPRank</span>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar" style="width:${rankWidth(a.bgpranking_score)}%;background:${rankColor(a.bgpranking_score)}"></div>
+        </div>
+        <span class="rank-val" style="color:${rankColor(a.bgpranking_score)}">${a.bgpranking_score.toFixed(4)}</span>
+      </div>`
+    : ''
+
+  // WHOIS section
+  let whoisHtml = ''
+  if(a.whois && !a.whois.error){
+    const w = a.whois
+    whoisHtml = `
+      <button class="expand-btn" onclick="toggleWhois(this)">▸ whois / rdap</button>
+      <div class="whois-wrap">
+        <div class="whois-block">
+          ${w.network_name ? `<div class="wrow"><span class="wlabel">NET</span><span class="wval">${w.network_name}</span></div>` : ''}
+          ${w.cidr         ? `<div class="wrow"><span class="wlabel">CIDR</span><span class="wval">${w.cidr}</span></div>` : ''}
+          ${w.country      ? `<div class="wrow"><span class="wlabel">CC</span><span class="wval">${w.country}</span></div>` : ''}
+          ${w.rir          ? `<div class="wrow"><span class="wlabel">RIR</span><span class="wval">${w.rir.toUpperCase()}</span></div>` : ''}
+          ${w.abuse_email  ? `<div class="wrow"><span class="wlabel">ABUSE</span><a class="abuse-link" href="mailto:${w.abuse_email}">${w.abuse_email}</a></div>` : ''}
+        </div>
+      </div>`
+  }
+
+  // Badges
+  const spamBadge = a.spamhaus_listed
+    ? `<span class="badge badge-spam">SPAMHAUS</span>` : ''
+  const rpkiBadge = (a.rpki_status === 'invalid')
+    ? `<span class="badge badge-rpki">RPKI INVALID</span>` : ''
+
+  return `
+    <div class="card" data-idx="${idx}" data-type="${a.type}"
+         data-spam="${a.spamhaus_listed?1:0}" data-score="${a.score||0}">
+      <div class="top-row">
+        <span class="badge ${a.type}">${a.type.replace(/_/g,' ')}</span>
+        ${spamBadge}
+        ${rpkiBadge}
+        <span class="score ${sc}">${scoreLabel(a.score||0)} ${a.score||0}</span>
+      </div>
+      <div class="prefix">${a.prefix || '?'}</div>
+      <div class="detail">${a.detail || ''}</div>
+      ${flagsHtml}
+      ${rankHtml}
+      ${whoisHtml}
+      <div class="meta">
+        <span>AS${a.origin_as}</span>
+        <span class="meta-sep">·</span>
+        <span>${a.org || 'Unknown'}</span>
+        <span class="meta-sep">·</span>
+        <span>${a.country || '?'}</span>
+        <span class="meta-sep">·</span>
+        <span>${ts}</span>
+      </div>
+    </div>`
+}
+
+// ── Toggle WHOIS expand ──────────────────────────────────────
+function toggleWhois(btn){
+  const wrap = btn.nextElementSibling
+  const open = wrap.classList.toggle('open')
+  btn.textContent = (open ? '▾' : '▸') + ' whois / rdap'
+}
+
+// ── Add alert ────────────────────────────────────────────────
+function addAlert(a){
   const empty = document.getElementById('empty')
-  if (empty) empty.remove()
+  if(empty) empty.remove()
+
+  // Store
+  const idx = alerts.length
+  alerts.push(a)
 
   // Counts
   counts.total++
-  if (counts[a.type] !== undefined) counts[a.type]++
+  if(counts[a.type] !== undefined) counts[a.type]++
   document.getElementById('n-moas').textContent  = counts.MOAS
   document.getElementById('n-sub').textContent   = counts.SUBPREFIX_HIJACK
   document.getElementById('n-new').textContent   = counts.NEW_ORIGIN
   document.getElementById('n-total').textContent = counts.total
 
-  // Sidebar card
+  // Sidebar
   const feed = document.getElementById('feed')
-  const card = document.createElement('div')
-  card.className = 'card'
-  const sc = scoreClass(a.score || 0)
-  const ts = a.timestamp ? a.timestamp.replace('T', ' ') : ''
-  card.innerHTML = `
-    <div class="top-row">
-      <span class="badge ${a.type}">${a.type.replace(/_/g,' ')}</span>
-      <span class="score ${sc}">${scoreLabel(a.score||0)} ${a.score||0}</span>
-    </div>
-    <div class="prefix">${a.prefix || '?'}</div>
-    <div class="detail">${a.detail || ''}</div>
-    <div class="meta">AS${a.origin_as} &middot; ${a.org||'Unknown'} &middot; ${a.country||'?'} &middot; ${ts}</div>
-  `
+  const tmp  = document.createElement('div')
+  tmp.innerHTML = buildCard(a, idx)
+  const card = tmp.firstElementChild
+  if(!cardMatchesFilter(a) || !cardMatchesSearch(a, searchQuery))
+    card.classList.add('hidden')
   feed.prepend(card)
 
   // Map marker
   const lat = parseFloat(a.lat)
   const lon = parseFloat(a.lon)
-  if (!isNaN(lat) && !isNaN(lon) && !(lat === 0 && lon === 0)) {
-    const color = colors[a.type] || '#fff'
+  if(!isNaN(lat) && !isNaN(lon) && !(lat===0 && lon===0)){
+    const color = TYPE_COLORS[a.type] || '#fff'
+    const isPulse = (a.score||0) >= 70
+
     const circle = L.circleMarker([lat, lon], {
-      radius:      7,
+      radius:      isPulse ? 9 : 6,
       color:       color,
       fillColor:   color,
-      fillOpacity: 0.8,
-      weight:      1.5
+      fillOpacity: 0.75,
+      weight:      isPulse ? 2 : 1
     }).addTo(map)
-    circle.bindPopup(
-      `<b>${a.type.replace(/_/g,' ')}</b><br>
-       <b>${a.prefix}</b><br>
-       ${a.org || ''}<br>
-       ${a.country || ''}<br>
-       Score: ${a.score}<br>
-       <small>${a.detail}</small>`
-    )
-    // Fade out after 10 minutes
-    setTimeout(() => map.removeLayer(circle), 600000)
+
+    circle.bindPopup(`
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.7">
+        <b style="color:${color}">${a.type.replace(/_/g,' ')}</b><br>
+        <b style="color:#fff;font-size:12px">${a.prefix}</b><br>
+        ${a.org || ''} &middot; ${a.country || ''}<br>
+        Score: <b>${a.score||0}</b>
+        ${a.spamhaus_listed ? '<br><span style="color:#c4b5fd">⚑ SPAMHAUS LISTED</span>' : ''}
+        ${(a.rep_flags||[]).length ? `<br><span style="color:#fca5a5">⚑ ${a.rep_flags.join(', ')}</span>` : ''}
+        ${a.bgpranking_score != null ? `<br>BGPRank: <b style="color:${rankColor(a.bgpranking_score)}">${a.bgpranking_score.toFixed(4)}</b>` : ''}
+        ${a.whois?.network_name ? `<br>Net: ${a.whois.network_name}` : ''}
+        ${a.whois?.rir ? ` (${a.whois.rir.toUpperCase()})` : ''}
+        ${a.whois?.abuse_email ? `<br>Abuse: <a href="mailto:${a.whois.abuse_email}" style="color:#00d4ff">${a.whois.abuse_email}</a>` : ''}
+        <br><span style="color:#4a5568">${a.detail||''}</span>
+      </div>
+    `)
+    setTimeout(()=> map.removeLayer(circle), 600000)
   }
 }
 
-// ── Load existing alerts from DB ─────────────────────────────
+// ── Filter buttons ───────────────────────────────────────────
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    activeFilter = btn.dataset.filter
+    applyFilters()
+  })
+})
+
+// ── Search ───────────────────────────────────────────────────
+document.getElementById('search').addEventListener('input', e => {
+  searchQuery = e.target.value.trim()
+  applyFilters()
+})
+
+// ── Load existing alerts ─────────────────────────────────────
 fetch('/api/alerts')
   .then(r => r.json())
   .then(list => [...list].reverse().forEach(addAlert))
   .catch(e => console.error('Failed to load alerts:', e))
 
-// ── Live WebSocket feed ──────────────────────────────────────
-function connectWS() {
+// ── WebSocket ────────────────────────────────────────────────
+const wsStatus = document.getElementById('ws-status')
+function connectWS(){
   const ws = new WebSocket(`ws://${location.host}/ws`)
-  ws.onmessage = e => addAlert(JSON.parse(e.data))
-  ws.onclose   = ()  => setTimeout(connectWS, 3000)  // auto-reconnect
+  ws.onopen    = ()  => {
+    wsStatus.textContent = '● CONNECTED'
+    wsStatus.className   = 'ws-ok'
+  }
+  ws.onmessage = e  => addAlert(JSON.parse(e.data))
+  ws.onclose   = ()  => {
+    wsStatus.textContent = '● RECONNECTING'
+    wsStatus.className   = 'ws-err'
+    setTimeout(connectWS, 3000)
+  }
   ws.onerror   = ()  => ws.close()
 }
 connectWS()

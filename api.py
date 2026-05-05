@@ -54,3 +54,11 @@ async def push_alert(alert: dict):
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
+from reputation import get_asn_reputation, get_whois
+
+@app.get("/api/asn/{asn}")
+def asn_lookup(asn: str):
+    return {
+        "reputation": get_asn_reputation(asn),
+        "whois": get_whois(asn)  # pass a known IP of that ASN if needed
+    }
