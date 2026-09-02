@@ -185,9 +185,3 @@ ipwhois
 - ip-api free tier: 45 requests/min — may throttle on high alert volume
 - BGP Ranking API may be slow under load — alerts still fire, rep data fills async
 - Only monitors global BGP table (IPv4 + IPv6) — no local/private routes
-
----
-
-## License
-
-MIT — do whatever you want.
